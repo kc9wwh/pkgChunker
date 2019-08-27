@@ -2,6 +2,7 @@
 
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 # pkgChunker
+# Version: 1.0-b1
 #
 # Usage: ./pkgChunker -p [pathToPKG] -o [outputDirectory]
 #
@@ -12,7 +13,7 @@
 #
 # Created By: Joshua Roskos
 # Created On: 2019-07-12
-# Updated On: 2019-08-23
+# Updated On: 2019-08-27
 # Repository: https://github.com/kc9wwh/pkgChunker
 # License:    https://github.com/kc9wwh/pkgChunker/blob/master/LICENSE
 #
@@ -30,9 +31,9 @@ while getopts ":hp:o:" opt; do
 	case $opt in
 		h ) /bin/echo "$usage"
 			exit;;
-		p ) pathToPkg=$OPTARG
+		p ) pathToPkg="$OPTARG"
 			reqPkg="true";;
-		o ) outDir=$OPTARG
+		o ) outDir="$OPTARG"
 			reqDir="true";;
 		: ) /usr/bin/printf "missing argument for -%s\n" "$OPTARG" >&2
 			echo "$usage" >&2
@@ -63,8 +64,8 @@ while true; do
 	/usr/bin/printf "\nPackage Name:\t%s\nPackage Size:\t%s\nSave Location:\t%s\n\n" "$origPackageName" "$pkgSize" "$outDir"
 	read -p "Do you wish to continue (y/n)?" yn
 	case $yn in
-		y ) break;;
-		n ) exit 99;;
+		y|Y ) break;;
+		n|N ) exit 99;;
 		* ) /usr/bin/printf "\n******************************\nPlease answer y or n.\n";;
 	esac
 done
@@ -84,11 +85,10 @@ fi
 
 ## Split Package into 7GB Chunks
 /usr/bin/printf "Chunking package into smaller pieces...\n"
-#/usr/bin/split -b 7000m "$pathToPkg" "/private/tmp/$randPkgDir/$(basename "$pathToPkg")-"
-/usr/bin/split -b 10m "$pathToPkg" "/private/tmp/$randPkgDir/$(basename "$pathToPkg")-"
+/usr/bin/split -b 7000m "$pathToPkg" "/private/tmp/$randPkgDir/$(basename "$pathToPkg")-"
 
 ## How many chunks were created
-chunkCountTotal=$( ls /private/tmp/$randPkgDir/$(basename "$pathToPkg")* | wc -l | sed 's/^[ \t]*//' )
+chunkCountTotal=$( ls "/private/tmp/$randPkgDir/$(basename "$pathToPkg")"* | wc -l | sed 's/^[ \t]*//' )
 
 ## Chunk names
 chunkName=$( basename "$pathToPkg"* ); chunkName="${chunkName%.*}"
@@ -105,17 +105,17 @@ fi
 
 ## Move Chunks to Staging
 if [[ -d "/private/tmp/$randPkgDir" ]]; then
-	for i in /private/tmp/$randPkgDir/$chunkName*; do
+	for i in "/private/tmp/$randPkgDir/$chunkName"*; do
 		mv "\$i" "/private/tmp/$randDestDir/"
 	done
 	
 	## Determine Chunk Count & assemble if all pieces are present
-	fileCount=\$( ls /private/tmp/$randDestDir/$chunkName* | wc -l )
+	fileCount=\$( ls "/private/tmp/$randDestDir/$chunkName"* | wc -l | sed 's/^[ \t]*//' )
 	if [[ "\$fileCount" -eq "$chunkCountTotal" ]]; then
 		echo "Combining Chunks..."
-		/bin/cat /private/tmp/$randDestDir/$chunkName.pkg-* > /private/tmp/$randDestDir/$chunkName.pkg
+		/bin/cat "/private/tmp/$randDestDir/$chunkName.pkg-"* > "/private/tmp/$randDestDir/$chunkName.pkg"
 		## Remote Chunks
-		rm /private/tmp/"$randDestDir"/"$chunkName.pkg"-*
+		rm "/private/tmp/$randDestDir/$chunkName.pkg-"*
 		## Install Original Package
 		/usr/sbin/installer -pkg "/private/tmp/$randDestDir/$chunkName.pkg" -target LocalSystem && rm -fdr "/private/tmp/$randDestDir"
 	fi
@@ -133,7 +133,7 @@ chmod +x /private/tmp/$randPkgDir/Scripts/postinstall
 
 ## Create Package Structure & Build Packages
 count=0
-for i in /private/tmp/$randPkgDir/$(basename "$pathToPkg")*; do
+for i in "/private/tmp/$randPkgDir/$(basename "$pathToPkg")"*; do
 	((count++))
 	chunkCount=$( printf "%02d" "$count")
 	/usr/bin/printf "\nPackaging Chunk: %s...\n" "$(basename "$i")"
