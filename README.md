@@ -28,4 +28,4 @@ where:
 - This utility does not current support passing additional arguments to `/usr/sbin/installer` including the use of `-applyChoiceChangesXML`
 
 ## Support
-For any issues with this utility, please open an *Issue** on this repo and for any questions, please either open an *Issue* or reach out in the MacAdmins Slack channel **[#pkgchunker](https://macadmins.slack.com/messages/CMSCC6XB7)**
+For any issues with this utility, please open an *Issue* on this repo and for any questions, please either open an *Issue* or reach out in the MacAdmins Slack channel **[#pkgchunker](https://macadmins.slack.com/messages/CMSCC6XB7)**
