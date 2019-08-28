@@ -1,0 +1,146 @@
+#!/bin/sh
+
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+# pkgChunker
+# Version: 1.0-b1
+#
+# Usage: ./pkgChunker -p [pathToPKG] -o [outputDirectory]
+#
+# The PkgChunker was created to address issues with download
+# file size limits of the AWS CloudFront (JCDS). This utility
+# will take an exiting PKG and brake it up in smaller PKGs 
+# that can be easily distributed and later assembled. 
+#
+# Created By: Joshua Roskos
+# Created On: 2019-07-12
+# Updated On: 2019-08-27
+# Repository: https://github.com/kc9wwh/pkgChunker
+# License:    https://github.com/kc9wwh/pkgChunker/blob/master/LICENSE
+#
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
+usage="$(basename "$0") [-h] [-p pathToPkg] [-o /path/to/output] -- program to split large pkg's into chunks for the JCDS
+
+where:
+	-h shows this help information
+	-p specify the package to be chunked
+	-o specify the output location for chunked packages
+"
+
+while getopts ":hp:o:" opt; do
+	case $opt in
+		h ) /bin/echo "$usage"
+			exit;;
+		p ) pathToPkg="$OPTARG"
+			reqPkg="true";;
+		o ) outDir="$OPTARG"
+			reqDir="true";;
+		: ) /usr/bin/printf "missing argument for -%s\n" "$OPTARG" >&2
+			echo "$usage" >&2
+			exit 1;;
+		\?) /usr/bin/printf "illegal option: -%s\n" "$OPTARG" >&2
+			/bin/echo "$usage" >&2
+			exit 1;;
+	esac
+done
+
+if [[ "$reqPkg" != "true" ]] || [[ "$reqDir" != "true" ]]; then
+	/usr/bin/printf "both -p and -o are required options and need to be provided\n%s\n" "$usage"
+	exit 1;
+fi
+
+## Inspect Package (Flat Pkg, Size)
+if [[ -f "$pathToPkg" ]]; then 
+	/usr/bin/printf "Flat package, checking file size...\n"
+	origPackageName=$(basename "$pathToPkg")
+	pkgSize=$( /usr/bin/du -sh "$pathToPkg" | awk '{print $1}' )
+else
+	/usr/bin/printf "Non-Flat package, please select a flat package to continue...\nExiting...\n"
+	exit 2
+fi
+
+## Prompt User to Confirm and Proceed
+while true; do
+	/usr/bin/printf "\nPackage Name:\t%s\nPackage Size:\t%s\nSave Location:\t%s\n\n" "$origPackageName" "$pkgSize" "$outDir"
+	read -p "Do you wish to continue (y/n)?" yn
+	case $yn in
+		y|Y ) break;;
+		n|N ) exit 99;;
+		* ) /usr/bin/printf "\n******************************\nPlease answer y or n.\n";;
+	esac
+done
+
+## Generate Random Directories
+randPkgDir=$( /bin/date | /sbin/md5 ); /bin/sleep 1
+randDestDir=$( /bin/date | /sbin/md5 )
+
+## Create Working Directory Structure
+if [[ "$randPkgDir" != "" ]] && [[ "$randDestDir" != "" ]]; then
+	/bin/mkdir -p /private/tmp/$randPkgDir/ROOT/private/tmp/$randPkgDir
+	/bin/mkdir -p /private/tmp/$randPkgDir/Scripts
+else
+	/usr/bin/printf "Error creating tmp directory structure, exiting...\n"
+	exit 5
+fi
+
+## Split Package into 7GB Chunks
+/usr/bin/printf "Chunking package into smaller pieces...\n"
+/usr/bin/split -b 7000m "$pathToPkg" "/private/tmp/$randPkgDir/$(basename "$pathToPkg")-"
+
+## How many chunks were created
+chunkCountTotal=$( ls "/private/tmp/$randPkgDir/$(basename "$pathToPkg")"* | wc -l | sed 's/^[ \t]*//' )
+
+## Chunk names
+chunkName=$( basename "$pathToPkg"* ); chunkName="${chunkName%.*}"
+
+## Create postinstall Script
+/usr/bin/printf "Creating postinstall script...\n"
+/bin/cat << EOF > /private/tmp/$randPkgDir/Scripts/postinstall
+#!/bin/bash
+
+## Create Staging Dir if not already created
+if [[ ! -d "/private/tmp/$randDestDir" ]]; then
+	/bin/mkdir -p /private/tmp/$randDestDir
+fi
+
+## Move Chunks to Staging
+if [[ -d "/private/tmp/$randPkgDir" ]]; then
+	for i in "/private/tmp/$randPkgDir/$chunkName"*; do
+		mv "\$i" "/private/tmp/$randDestDir/"
+	done
+	
+	## Determine Chunk Count & assemble if all pieces are present
+	fileCount=\$( ls "/private/tmp/$randDestDir/$chunkName"* | wc -l | sed 's/^[ \t]*//' )
+	if [[ "\$fileCount" -eq "$chunkCountTotal" ]]; then
+		echo "Combining Chunks..."
+		/bin/cat "/private/tmp/$randDestDir/$chunkName.pkg-"* > "/private/tmp/$randDestDir/$chunkName.pkg"
+		## Remote Chunks
+		rm "/private/tmp/$randDestDir/$chunkName.pkg-"*
+		## Install Original Package
+		/usr/sbin/installer -pkg "/private/tmp/$randDestDir/$chunkName.pkg" -target LocalSystem && rm -fdr "/private/tmp/$randDestDir"
+	fi
+else
+	/usr/bin/printf "Package Directory Not Found, exiting...\n"
+	exit 10
+fi
+
+## Cleanup
+rm -fdr /private/tmp/$randPkgDir
+
+exit 0
+EOF
+chmod +x /private/tmp/$randPkgDir/Scripts/postinstall
+
+## Create Package Structure & Build Packages
+count=0
+for i in "/private/tmp/$randPkgDir/$(basename "$pathToPkg")"*; do
+	((count++))
+	chunkCount=$( printf "%02d" "$count")
+	/usr/bin/printf "\nPackaging Chunk: %s...\n" "$(basename "$i")"
+	mv "$i" "/private/tmp/$randPkgDir/ROOT/private/tmp/$randPkgDir/"
+	/usr/bin/pkgbuild --ownership preserve-other --scripts "/private/tmp/$randPkgDir/Scripts/" --root "/private/tmp/$randPkgDir/ROOT/" --identifier pkgchunker.pkg "$outDir/$chunkName-$chunkCount.pkg"
+	rm /private/tmp/$randPkgDir/ROOT/private/tmp/$randPkgDir/"$chunkName"*
+done
+
+## Cleanup
+rm -fdr /private/tmp/$randPkgDir
