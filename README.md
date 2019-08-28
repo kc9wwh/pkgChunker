@@ -13,7 +13,7 @@ Using the utility is quite simple.
 6. Scope to target computers
 
 ```
-josh.roskos@MarvinsDepressedMBP:~/Desktop/PkgChunker$ ./pkgChunker 
+josh.roskos@MarvinsDepressedMBP:~/Desktop/PkgChunker$ pkgChunker -h
 both -p and -o are required options and need to be provided
 pkgChunker [-h] [-p pathToPkg] [-o /path/to/output] -- program to split large pkg's into chunks for the JCDS
 
